@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router';
+import { useAuth } from '@/features/auth/AuthProvider';
 
 interface PageLayoutProps {
   children: ReactNode;
@@ -9,7 +10,13 @@ interface PageLayoutProps {
 
 export function PageLayout({ children, title }: PageLayoutProps) {
   const navigate = useNavigate();
-  
+  const { signOut } = useAuth();
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate('/login', { replace: true });
+  };
+
   return (
     <div className="min-h-screen bg-[#1a1a1a] overflow-x-hidden">
       {/* Grain texture overlay */}
@@ -37,7 +44,14 @@ export function PageLayout({ children, title }: PageLayoutProps) {
             </h1>
           )}
           
-          <div className="w-24"></div> {/* Spacer for centering */}
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 bg-[#ff6b6b] text-white px-4 py-2 rounded-xl hover:bg-[#ff5252] transition-colors border-2 border-black shadow-lg"
+            style={{ fontWeight: 800 }}
+          >
+            <LogOut className="w-4 h-4" strokeWidth={3} />
+            Logout
+          </button>
         </div>
       </div>
       

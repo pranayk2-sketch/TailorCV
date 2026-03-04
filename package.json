@@ -5,11 +5,16 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite"
+    "dev": "vite",
+    "parse-server": "node scripts/server.mjs",
+    "parse-resume": "node scripts/parseResume.mjs",
+    "test:parse": "python3 scripts/test_parse_resume.py",
+    "api": "node server/index.js"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
+    "@mozilla/readability": "^0.6.0",
     "@mui/icons-material": "7.3.5",
     "@mui/material": "7.3.5",
     "@popperjs/core": "2.11.8",
@@ -45,7 +50,9 @@
     "cmdk": "1.1.1",
     "date-fns": "3.6.0",
     "embla-carousel-react": "8.6.0",
+    "express-rate-limit": "^8.2.1",
     "input-otp": "1.4.2",
+    "jsdom": "^28.1.0",
     "lucide-react": "0.487.0",
     "motion": "12.23.24",
     "next-themes": "0.4.6",
@@ -67,6 +74,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
+    "express": "^5.2.1",
     "tailwindcss": "4.1.12",
     "vite": "6.3.5"
   },

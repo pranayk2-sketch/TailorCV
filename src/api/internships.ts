@@ -7,10 +7,6 @@ import type {
   GetInternshipsBatchParams,
   GetInternshipsBatchResult,
 } from '@/types/internship';
-import type { SavedInternship, SavedStatus, SavedInternshipsResult } from '@/types/saved';
-
-// TODO: Replace with auth.uid() once Supabase Auth is integrated.
-const PLACEHOLDER_USER_ID = '00000000-0000-0000-0000-000000000000';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
@@ -113,49 +109,36 @@ export async function getInternshipsForBatch({
   return { data: (data as Internship[]) ?? [], error: null };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Saved internships
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Upserts a saved-internship record for the current user. */
-export async function saveInternship(
-  internshipId: string,
-  status: SavedStatus = 'saved',
-): Promise<{ data: SavedInternship | null; error: string | null }> {
-  // TODO: Replace PLACEHOLDER_USER_ID with supabase.auth.getUser().data.user?.id
+/**
+ * Get internships by IDs.
+ */
+export async function getInternshipsByIds(ids: string[]): Promise<{
+  data: Internship[];
+  error: string | null;
+}> {
+  if (ids.length === 0) return { data: [], error: null };
   const { data, error } = await supabase
-    .from('saved_internships')
-    .upsert(
-      { user_id: PLACEHOLDER_USER_ID, internship_id: internshipId, status },
-      { onConflict: 'user_id,internship_id' },
-    )
-    .select()
-    .single();
-
-  if (error) return { data: null, error: error.message };
-  return { data: data as SavedInternship, error: null };
-}
-
-/** Removes a saved-internship record for the current user. */
-export async function unsaveInternship(internshipId: string): Promise<{ error: string | null }> {
-  const { error } = await supabase
-    .from('saved_internships')
-    .delete()
-    .eq('user_id', PLACEHOLDER_USER_ID)
-    .eq('internship_id', internshipId);
-
-  return { error: error?.message ?? null };
-}
-
-/** Fetches all internships saved by the current user. */
-export async function getSavedInternships(): Promise<SavedInternshipsResult> {
-  // TODO: Replace PLACEHOLDER_USER_ID with supabase.auth.getUser().data.user?.id
-  const { data, error } = await supabase
-    .from('saved_internships')
+    .from('internships')
     .select('*')
-    .eq('user_id', PLACEHOLDER_USER_ID)
-    .order('created_at', { ascending: false });
-
+    .in('id', ids);
   if (error) return { data: [], error: error.message };
-  return { data: (data as SavedInternship[]) ?? [], error: null };
+  return { data: (data as Internship[]) ?? [], error: null };
 }
+
+/**
+ * Get a single internship by ID.
+ */
+export async function getInternship(id: string): Promise<{
+  data: Internship | null;
+  error: string | null;
+}> {
+  const { data, error } = await supabase
+    .from('internships')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (error) return { data: null, error: error.message };
+  return { data: data as Internship, error: null };
+}
+
+// Saved internships moved to src/api/savedInternships.ts (uses auth.uid())

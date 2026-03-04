@@ -4,6 +4,9 @@ import { useNavigate } from 'react-router';
 
 export function HeroPanel() {
   const navigate = useNavigate();
+
+  const handleStartBuilding = () => navigate('/assistant');
+  const handleImportResume = () => navigate('/upload');
   
   return (
     <motion.div
@@ -48,14 +51,14 @@ export function HeroPanel() {
         {/* Action Buttons */}
         <div className="mt-auto space-y-4">
           <button 
-            onClick={() => navigate('/assistant')}
+            onClick={handleStartBuilding}
             className="w-full bg-black text-white py-4 px-6 rounded-xl hover:bg-[#333] transition-colors border-2 border-black shadow-lg text-lg" 
             style={{ fontWeight: 800 }}
           >
             Start Building Resume
           </button>
           <button 
-            onClick={() => navigate('/upload')}
+            onClick={handleImportResume}
             className="w-full bg-[#ff6b6b] text-white py-4 px-6 rounded-xl hover:bg-[#ff5252] transition-colors border-2 border-black shadow-lg text-lg" 
             style={{ fontWeight: 800 }}
           >

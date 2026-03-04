@@ -17,16 +17,20 @@ import {
   Zap,
   List,
   X,
+  FileText,
+  Link2,
 } from 'lucide-react';
 
 import { PageLayout } from '../components/PageLayout';
+import { getInternships, getInternshipsForBatch, getInternshipsByIds } from '@/api/internships';
 import {
-  getInternships,
-  getInternshipsForBatch,
   saveInternship,
   unsaveInternship,
   getSavedInternships,
-} from '@/api/internships';
+} from '@/api/savedInternships';
+import { fetchDescription, fetchDescriptionsBulk } from '@/api/description';
+import { mapInternshipToVariant } from '@/api/variants';
+import { toast } from 'sonner';
 import type { Internship, InternshipFilters } from '@/types/internship';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -100,6 +104,8 @@ function InternshipCard({
   isSaved,
   onSave,
   onUnsave,
+  onFetchDesc,
+  onMapVariant,
   mode,
 }: {
   internship: Internship;
@@ -107,10 +113,14 @@ function InternshipCard({
   isSaved: boolean;
   onSave: (id: string) => void;
   onUnsave: (id: string) => void;
+  onFetchDesc?: (id: string) => void;
+  onMapVariant?: (id: string) => void;
   mode: 'batch' | 'browse';
 }) {
   const navigate = useNavigate();
   const [savePending, setSavePending] = useState(false);
+  const [fetchDescPending, setFetchDescPending] = useState(false);
+  const [mapPending, setMapPending] = useState(false);
   const bgColor = colorForCompany(internship.company_name);
 
   const handleSaveToggle = async () => {
@@ -180,6 +190,42 @@ function InternshipCard({
               >
                 Details
               </button>
+              {onFetchDesc && (
+                <button
+                  onClick={async () => {
+                    setFetchDescPending(true);
+                    await onFetchDesc(internship.id);
+                    setFetchDescPending(false);
+                  }}
+                  disabled={fetchDescPending}
+                  title="Fetch job description"
+                  className="p-2 rounded-xl border-2 border-black bg-[#95e1d3] hover:bg-[#85d1c3] disabled:opacity-60"
+                >
+                  {fetchDescPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <FileText className="w-4 h-4" strokeWidth={3} />
+                  )}
+                </button>
+              )}
+              {onMapVariant && (
+                <button
+                  onClick={async () => {
+                    setMapPending(true);
+                    await onMapVariant(internship.id);
+                    setMapPending(false);
+                  }}
+                  disabled={mapPending}
+                  title="Map to resume variant"
+                  className="p-2 rounded-xl border-2 border-black bg-[#ffd93d] hover:bg-[#ffc020] disabled:opacity-60"
+                >
+                  {mapPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Link2 className="w-4 h-4" strokeWidth={3} />
+                  )}
+                </button>
+              )}
 
               <a
                 href={internship.url}
@@ -267,6 +313,10 @@ export function InternshipsPage() {
 
   // ── Saved state
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [savedInternships, setSavedInternships] = useState<Internship[]>([]);
+  const [bulkFetchLoading, setBulkFetchLoading] = useState(false);
+  const [bulkMapLoading, setBulkMapLoading] = useState(false);
+  const [selectedForBulk, setSelectedForBulk] = useState<Set<string>>(new Set());
 
   // ── Build filters object from UI state
   const activeFilters: InternshipFilters = {
@@ -282,12 +332,22 @@ export function InternshipsPage() {
     selectedTerms.length +
     (remoteOnly ? 1 : 0);
 
+  const refreshSaved = useCallback(async () => {
+    const { data } = await getSavedInternships();
+    const ids = data.map((s) => s.internship_id);
+    setSavedIds(new Set(ids));
+    if (ids.length > 0) {
+      const { data: internships } = await getInternshipsByIds(ids);
+      setSavedInternships(internships);
+    } else {
+      setSavedInternships([]);
+    }
+  }, []);
+
   // ── Load saved internships on mount
   useEffect(() => {
-    getSavedInternships().then(({ data }) => {
-      setSavedIds(new Set(data.map((s) => s.internship_id)));
-    });
-  }, []);
+    refreshSaved();
+  }, [refreshSaved]);
 
   // ── Load browse results when page/filters change in browse mode
   useEffect(() => {
@@ -378,12 +438,62 @@ export function InternshipsPage() {
 
   const handleSave = async (id: string) => {
     const { error } = await saveInternship(id);
-    if (!error) setSavedIds((prev) => new Set([...prev, id]));
+    if (!error) await refreshSaved();
   };
 
   const handleUnsave = async (id: string) => {
     const { error } = await unsaveInternship(id);
-    if (!error) setSavedIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
+    if (!error) await refreshSaved();
+  };
+
+  const handleFetchDesc = async (internshipId: string) => {
+    const { error } = await fetchDescription(internshipId);
+    if (error) toast.error(error);
+    else toast.success('Description fetched');
+  };
+
+  const handleMapVariant = async (internshipId: string) => {
+    const { data, error } = await mapInternshipToVariant(internshipId);
+    if (error) toast.error(error);
+    else if (data) toast.success(`Mapped to ${data.roleFamily}. Score: ${data.score}%`);
+  };
+
+  const bulkFetchDescriptions = async () => {
+    const ids = Array.from(selectedForBulk);
+    if (ids.length === 0) {
+      toast.error('Select internships first');
+      return;
+    }
+    setBulkFetchLoading(true);
+    const { data, error } = await fetchDescriptionsBulk(ids);
+    setBulkFetchLoading(false);
+    if (error) toast.error(error);
+    else toast.success(`Fetched ${data?.results?.filter((r) => !r.error).length ?? 0} descriptions`);
+  };
+
+  const bulkMapToVariants = async () => {
+    const ids = Array.from(selectedForBulk);
+    if (ids.length === 0) {
+      toast.error('Select internships first');
+      return;
+    }
+    setBulkMapLoading(true);
+    let done = 0;
+    for (const id of ids) {
+      const { error } = await mapInternshipToVariant(id);
+      if (!error) done++;
+    }
+    setBulkMapLoading(false);
+    toast.success(`Mapped ${done} of ${ids.length} to variants`);
+  };
+
+  const toggleBulkSelect = (id: string) => {
+    setSelectedForBulk((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const totalBrowsePages = Math.ceil(browseTotal / BROWSE_PAGE_SIZE);
@@ -486,6 +596,56 @@ export function InternshipsPage() {
             </div>
           </div>
         </motion.div>
+
+        {/* ── Saved Internships (bulk actions) ───────────────────────────── */}
+        {savedInternships.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-[#95e1d3] rounded-3xl p-6 border-4 border-black shadow-xl"
+          >
+            <h3 className="text-lg uppercase mb-3" style={{ fontWeight: 900 }}>
+              Saved Internships ({savedInternships.length})
+            </h3>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {savedInternships.map((i) => (
+                <label
+                  key={i.id}
+                  className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border-2 border-black cursor-pointer hover:bg-gray-50"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedForBulk.has(i.id)}
+                    onChange={() => toggleBulkSelect(i.id)}
+                  />
+                  <span className="text-sm truncate max-w-[200px]" style={{ fontWeight: 700 }}>
+                    {i.company_name} — {i.title}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={bulkFetchDescriptions}
+                disabled={bulkFetchLoading || selectedForBulk.size === 0}
+                className="bg-black text-white px-4 py-2 rounded-xl border-2 border-black flex items-center gap-2 disabled:opacity-60"
+                style={{ fontWeight: 800 }}
+              >
+                {bulkFetchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                Fetch Descriptions
+              </button>
+              <button
+                onClick={bulkMapToVariants}
+                disabled={bulkMapLoading || selectedForBulk.size === 0}
+                className="bg-[#ffd93d] text-black px-4 py-2 rounded-xl border-2 border-black flex items-center gap-2 disabled:opacity-60"
+                style={{ fontWeight: 800 }}
+              >
+                {bulkMapLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                Map Selected to Variants
+              </button>
+            </div>
+          </motion.div>
+        )}
 
         {/* ── Mode Tabs ─────────────────────────────────────────────────── */}
         <motion.div
@@ -698,6 +858,8 @@ export function InternshipsPage() {
                         isSaved={savedIds.has(internship.id)}
                         onSave={handleSave}
                         onUnsave={handleUnsave}
+                        onFetchDesc={handleFetchDesc}
+                        onMapVariant={handleMapVariant}
                         mode={mode}
                       />
                     ))}
