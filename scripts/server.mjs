@@ -23,8 +23,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 try {
   const envPath = resolve(__dirname, '..', '.env');
   const content = readFileSync(envPath, 'utf-8');
-  for (const line of content.split('\n')) {
-    const m = line.match(/^([^#=]+)=(.*)$/);
+  for (const line of content.split(/\r?\n/)) {
+    const m = line.match(/^([^#=]+)=(.*)/);
     if (m) {
       const key = m[1].trim();
       const val = m[2].trim().replace(/^["']|["']$/g, '');
@@ -44,27 +44,53 @@ app.use((req, res, next) => {
 });
 
 async function runPythonParser(filePath) {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const py = spawn('python3', [resolve(__dirname, 'parse_resume.py'), filePath], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-    py.stdout.on('data', (d) => (stdout += d.toString()));
-    py.stderr.on('data', (d) => (stderr += d.toString()));
-    py.on('close', (code) => {
-      if (code !== 0) {
-        rejectPromise(new Error(stderr || `Python exited ${code}`));
-      } else {
-        try {
-          resolvePromise(JSON.parse(stdout));
-        } catch (e) {
-          rejectPromise(new Error('Invalid JSON from parser'));
-        }
+  const parserPath = resolve(__dirname, 'parse_resume.py');
+  const pythonCandidates = [
+    process.env.PYTHON_PATH,
+    process.env.PYTHON_CMD,
+    'python3',
+    'python',
+    'py',
+  ].filter(Boolean);
+
+  let lastError = null;
+
+  for (const pythonCmd of pythonCandidates) {
+    try {
+      const parsed = await new Promise((resolvePromise, rejectPromise) => {
+        const args = pythonCmd === 'py' ? ['-3', parserPath, filePath] : [parserPath, filePath];
+        const py = spawn(pythonCmd, args, {
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let stdout = '';
+        let stderr = '';
+        py.stdout.on('data', (d) => (stdout += d.toString()));
+        py.stderr.on('data', (d) => (stderr += d.toString()));
+        py.on('close', (code) => {
+          if (code !== 0) {
+            rejectPromise(new Error(stderr || `${pythonCmd} exited ${code}`));
+          } else {
+            try {
+              resolvePromise(JSON.parse(stdout));
+            } catch (e) {
+              rejectPromise(new Error('Invalid JSON from parser'));
+            }
+          }
+        });
+        py.on('error', (err) => rejectPromise(err));
+      });
+
+      return parsed;
+    } catch (err) {
+      lastError = err;
+      // Continue to next candidate only if executable wasn't found.
+      if (err?.code !== 'ENOENT' && !String(err?.message || '').includes('not found')) {
+        throw err;
       }
-    });
-    py.on('error', (err) => rejectPromise(err));
-  });
+    }
+  }
+
+  throw lastError || new Error('No working Python executable found');
 }
 
 app.post('/parse', async (req, res) => {
